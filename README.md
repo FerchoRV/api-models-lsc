@@ -79,13 +79,12 @@ Toma una cadena de texto libre en español y devuelve una lista ordenada con los
 
 Cuerpo de la Petición (JSON):
 ```json
-    {
-      "text": "Hola, ¿cómo estás? Yo quiero comer"
-    }
-    ```
+{
+    "text": "Hola, ¿cómo estás? Yo quiero comer"
+}
 
-*   **Respuesta Exitosa (200 OK):**
-```json
+Respuesta Exitosa (200 OK):
+
 
 {
   "text_original": "Hola, ¿cómo estás? Yo quiero comer",
