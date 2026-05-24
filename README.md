@@ -24,7 +24,7 @@ Desarrollado con **FastAPI**, el sistema se conecta con modelos de deep learning
 
 ## Estructura del Proyecto
 
-
+```text
 colsign-api/
 ├── app/
 │   ├── api/
@@ -47,7 +47,7 @@ colsign-api/
 │   └── actionPalabrasV2.h5
 ├── .env                                 # Variables sensibles locales (Ignorado en git)
 └── requirements.txt                     # Dependencias del proyecto
-
+```
 ## Configuración e Instalación
 
 1. Crear entorno virtual
@@ -101,7 +101,7 @@ Cuerpo de la Petición (JSON):
     "r"
   ]
 }
+```
 
-
-🤝 Contribuciones y Desarrollo
+## 🤝 Contribuciones y Desarrollo
 Este proyecto forma parte de una iniciativa de investigación aplicada para la inclusión social. Las sugerencias de optimización en el pipeline de procesamiento de los modelos y en las llamadas de contexto estructurado son bienvenidas.
