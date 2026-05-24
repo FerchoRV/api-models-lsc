@@ -82,10 +82,11 @@ Cuerpo de la Petición (JSON):
 {
     "text": "Hola, ¿cómo estás? Yo quiero comer"
 }
+```
 
 Respuesta Exitosa (200 OK):
 
-
+```json
 {
   "text_original": "Hola, ¿cómo estás? Yo quiero comer",
   "señas_seleccionadas": [
