@@ -10,14 +10,15 @@ flujo jerárquico. Todos siguen el mismo contrato:
 
 Endpoints expuestos (con prefix `/test` definido en `router.py`):
 
-    POST /test/raiz         -> grupo morfológico (4 clases)
-    POST /test/static       -> sub-modelo Grupo Estático       (21 clases)
-    POST /test/unimanual    -> sub-modelo Grupo Unimanual      (64 clases)
-    POST /test/simetrico    -> sub-modelo Bimanual Simétrico   (30 clases)
-    POST /test/asimetrico   -> sub-modelo Bimanual Asimétrico  (39 clases)
+    POST /test/raiz         -> grupo morfológico                (4 clases)
+    POST /test/static       -> sub-modelo Grupo Estático        (21 clases)
+    POST /test/unimanual    -> sub-modelo Grupo Unimanual       (64 clases)
+    POST /test/simetrico    -> sub-modelo Bimanual Simétrico    (30 clases)
+    POST /test/asimetrico   -> sub-modelo Bimanual Asimétrico   (39 clases)
+    POST /test/plano        -> modelo plano (todas las clases)  (154 clases)
 """
 
-from typing import Callable, Optional
+from typing import Callable
 
 import numpy as np
 from fastapi import APIRouter, HTTPException
@@ -29,6 +30,7 @@ from app.schemas.colsign import (
 )
 from app.services import (
     pipeline_colsign_model_asimetrico as asimetrico_pipeline,
+    pipeline_colsign_model_plano as plano_pipeline,
     pipeline_colsign_model_raiz_v2 as raiz_pipeline,
     pipeline_colsign_model_simetrico as simetrico_pipeline,
     pipeline_colsign_model_static_v2 as static_pipeline,
@@ -115,6 +117,23 @@ def test_simetrico(payload: SinglePredictionRequest):
 def test_asimetrico(payload: SinglePredictionRequest):
     """Sub-modelo Grupo Dinámico Bimanual Asimétrico (39 clases)."""
     result = _run_single(asimetrico_pipeline.predict_one, payload)
+    return _to_response(result)
+
+
+# =====================================================================
+# Modelo plano (todas las clases, predicción individual)
+# =====================================================================
+
+@router.post("/plano", response_model=SinglePredictionResponse)
+def test_plano(payload: SinglePredictionRequest):
+    """Modelo plano `colsign_lstm_norm_45_154` (154 clases) en modo INDIVIDUAL.
+
+    SIEMPRE devuelve 1 sola predicción sin importar la duración del
+    video; muestrea 45 frames uniformemente del video completo. Para
+    procesar videos largos como múltiples predicciones usa el endpoint
+    batch `/sign-to-text/flat` en `translation.py`.
+    """
+    result = _run_single(plano_pipeline.predict_one, payload)
     return _to_response(result)
 
 
