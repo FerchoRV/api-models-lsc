@@ -6,12 +6,15 @@ Responsabilidades:
    OpenCV, que internamente delega en FFmpeg. Para URLs, esto streamea
    los bytes; es eficiente para videos cortos (los esperados, 2-10 s).
 2. Calcular el FPS real del video y leer todos sus frames en memoria.
-3. Dividir esos frames en clips de aproximadamente N segundos según el
-   FPS. La regla es:
+3. Dividir esos frames en clips de aproximadamente N segundos según un
+   FPS efectivo. La regla es:
      - Video ≤ ``short_threshold_s`` (3 s por defecto)  → 1 solo clip.
      - Video >  ``short_threshold_s``                   → clips
-       consecutivos no superpuestos de ``clip_seconds`` (2 s por default),
-       descartando el residuo final si dura menos de ``min_clip_seconds``.
+       consecutivos no superpuestos de ``clip_seconds`` (2 s por default).
+       El residuo final se conserva SOLO si tiene al menos
+       ``min_frames`` frames (por defecto ``sequence_length`` = 45).
+       Esto evita predecir sobre un clip residual demasiado corto, donde
+       el muestreo a 45 keypoints terminaría repitiendo frames.
 4. Convertir cada clip en una secuencia de keypoints ``(sequence_length,
    225)`` que los modelos LSTM esperan, reutilizando la lógica de
    ``utils_pipeplanes.extract_lstm_features`` para garantizar que el
@@ -38,7 +41,6 @@ from app.services.src.utils_pipeplanes import (
 DEFAULT_SEQUENCE_LENGTH      = 45
 DEFAULT_CLIP_SECONDS         = 2.0   # cada chunk dura ~2 s de video real
 DEFAULT_SHORT_THRESHOLD_S    = 3.0   # ≤3 s → 1 sola secuencia
-DEFAULT_MIN_CLIP_SECONDS     = 1.0   # residuos cortos se descartan
 DEFAULT_FPS_FALLBACK         = 30.0  # si OpenCV no reporta FPS
 
 
@@ -86,8 +88,8 @@ def split_frames_into_clips(
     fps: float,
     clip_seconds: float        = DEFAULT_CLIP_SECONDS,
     short_threshold_s: float   = DEFAULT_SHORT_THRESHOLD_S,
-    min_clip_seconds: float    = DEFAULT_MIN_CLIP_SECONDS,
     fps_fallback: float        = DEFAULT_FPS_FALLBACK,
+    min_frames: int            = DEFAULT_SEQUENCE_LENGTH,
 ) -> List[List[np.ndarray]]:
     """Divide la lista de frames en clips contiguos según el FPS.
 
@@ -96,22 +98,43 @@ def split_frames_into_clips(
           solo clip con todos los frames (típico para los videos de
           entrenamiento de 2-3 s).
         - Si es mayor, divide en clips consecutivos de
-          ``round(fps * clip_seconds)`` frames cada uno. El último clip
-          se conserva solo si dura ≥ ``min_clip_seconds`` (evita
-          residuos demasiado cortos que producirían keypoints repetidos).
-        - Si ``fps`` no es válido (0 o negativo), usa ``fps_fallback``.
+          ``round(effective_fps * clip_seconds)`` frames cada uno.
+          Los rangos NO se comparten: si el clip size es 60, los cortes
+          son [0:60], [60:120], [120:180], etc.
+        - ``effective_fps`` usa al menos ``fps_fallback``. Esto evita
+          sobre-dividir videos de Firebase/URLs públicas cuando OpenCV
+          reporta un FPS menor al real (por ejemplo 24 en un video que
+          fue grabado/exportado a ~30 FPS).
+        - Los clips con MENOS de ``min_frames`` frames se descartan.
+          Por defecto ``min_frames`` = ``DEFAULT_SEQUENCE_LENGTH`` (45),
+          porque debajo de eso el muestreo a 45 keypoints tendría que
+          repetir frames y la predicción no sería confiable. Esto solo
+          aplica al residuo final: los clips internos siempre tienen
+          exactamente ``clip_size`` frames.
+
+    Ejemplos (effective_fps=30, clip_seconds=2 → clip_size=60, min_frames=45):
+        - 200 frames → [0:60], [60:120], [120:180]; residuo [180:200]
+          (20 frames) se descarta por ser < 45.
+        - 220 frames → [0:60], [60:120], [120:180], [180:220]; el último
+          tiene 40 frames y también se descarta → quedan 3 clips.
+        - 250 frames → [0:60], [60:120], [120:180], [180:240]; residuo
+          [240:250] se descarta → quedan 4 clips.
     """
     if not frames:
         return []
 
-    effective_fps = fps if fps and fps > 0 else fps_fallback
+    effective_fps = _resolve_effective_fps(fps, fps_fallback)
     total_seconds = len(frames) / effective_fps
 
     if total_seconds <= short_threshold_s:
+        # Si el video es corto pero tiene MENOS de min_frames, igual
+        # devolvemos el único clip: extract_lstm_features hace muestreo
+        # con repetición y el caller (un sub-pipeline) ya asume que
+        # quiere SIEMPRE una predicción, aún con poca info.
         return [list(frames)]
 
     clip_size = max(1, int(round(effective_fps * clip_seconds)))
-    min_size  = max(1, int(round(effective_fps * min_clip_seconds)))
+    min_size  = max(1, int(min_frames))
 
     clips: List[List[np.ndarray]] = []
     for start in range(0, len(frames), clip_size):
@@ -119,6 +142,26 @@ def split_frames_into_clips(
         if len(chunk) >= min_size:
             clips.append(chunk)
     return clips
+
+
+def _resolve_effective_fps(
+    reported_fps: float,
+    fps_fallback: float = DEFAULT_FPS_FALLBACK,
+) -> float:
+    """Normaliza el FPS usado para cortar clips.
+
+    OpenCV puede reportar FPS bajos o inconsistentes al leer videos desde
+    URLs públicas. En este proyecto los videos de entrenamiento y prueba
+    se manejan alrededor de 30 FPS; si el metadata reporta menos, usarlo
+    provoca más clips de los esperados (p.ej. un video de ~120 frames se
+    corta en 3 partes con 24 FPS en vez de 2 partes con 30 FPS).
+
+    Por eso usamos `max(reported_fps, fps_fallback)` cuando hay FPS
+    válido, y `fps_fallback` cuando no lo hay.
+    """
+    if not reported_fps or reported_fps <= 0:
+        return fps_fallback
+    return max(float(reported_fps), float(fps_fallback))
 
 
 # =====================================================================
@@ -161,14 +204,15 @@ def video_to_sequences(
     sequence_length: int      = DEFAULT_SEQUENCE_LENGTH,
     clip_seconds: float       = DEFAULT_CLIP_SECONDS,
     short_threshold_s: float  = DEFAULT_SHORT_THRESHOLD_S,
-    min_clip_seconds: float   = DEFAULT_MIN_CLIP_SECONDS,
     holistic = None,
 ) -> List[np.ndarray]:
     """Procesa un video completo y devuelve N secuencias listas para
     predecir, donde N depende de la duración del video.
 
     - Si el video es corto (≤ ``short_threshold_s``), N=1.
-    - Si es largo, N = cantidad de clips de ``clip_seconds`` que caben.
+    - Si es largo, N = cantidad de clips de ``clip_seconds`` que caben,
+      descartando residuos finales con menos de ``sequence_length``
+      frames (porque no alcanzarían para un muestreo limpio a 45).
 
     Reutiliza una sola instancia de MediaPipe Holistic entre clips para
     evitar el coste de inicialización repetida.
@@ -178,7 +222,7 @@ def video_to_sequences(
         frames, fps,
         clip_seconds=clip_seconds,
         short_threshold_s=short_threshold_s,
-        min_clip_seconds=min_clip_seconds,
+        min_frames=sequence_length,
     )
     if not clips:
         return []
@@ -214,7 +258,6 @@ __all__ = [
     "DEFAULT_SEQUENCE_LENGTH",
     "DEFAULT_CLIP_SECONDS",
     "DEFAULT_SHORT_THRESHOLD_S",
-    "DEFAULT_MIN_CLIP_SECONDS",
     "read_all_frames_with_fps",
     "split_frames_into_clips",
     "clip_to_sequence",
