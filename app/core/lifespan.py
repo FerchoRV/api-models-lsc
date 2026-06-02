@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+import anyio.to_thread
 import tensorflow as tf
 from app.core.config import settings
 from app.core import model_registry
@@ -23,6 +24,20 @@ ai_models = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("[INFO] Cargando datos de memoria del sistema...")
+
+    # 0) Ajustar el threadpool de Starlette/AnyIO.
+    # FastAPI ejecuta endpoints `def` (síncronos) y `run_in_threadpool` sobre
+    # este pool. El default es bajo (~6-8 threads en Cloud Run con 2 CPUs),
+    # lo que genera colas cuando hay ráfagas de usuarios en los endpoints
+    # individuales de `testing_models`. Lo subimos para soportar 50+
+    # requests concurrentes sin esperar turno en cola.
+    try:
+        anyio.to_thread.current_default_thread_limiter().total_tokens = (
+            settings.THREADPOOL_SIZE
+        )
+        print(f"[INFO] Threadpool ajustado a {settings.THREADPOOL_SIZE} tokens.")
+    except Exception as e:
+        print(f"[WARN] No se pudo ajustar el threadpool: {e}")
 
     # 1) Catálogo de nombres de señas (consumido por el endpoint Gemini)
     try:

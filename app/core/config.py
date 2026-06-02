@@ -44,6 +44,18 @@ class Settings(BaseSettings):
     # Modelo plano: 154 clases en una sola red (fallback / comparación).
     COLSIGN_FLAT_MODEL: str = "colsign_lstm_norm_45_154"
 
+    # ---- Concurrencia ----
+    # Tamaño del threadpool que FastAPI/Starlette usa para correr endpoints
+    # síncronos (`def`) y funciones envueltas con `run_in_threadpool`.
+    # El default de AnyIO es `min(32, cpu_count + 4)`, lo que en Cloud Run
+    # con 2 CPU son apenas ~6 threads. Subirlo a 64 permite atender más
+    # requests concurrentes a los endpoints individuales (testing_models)
+    # cuando el sistema recibe ráfagas de usuarios.
+    # NOTA Cloud Run: no aumenta el coste; solo eleva el techo de
+    # concurrencia. Si todos los threads están ocupados al mismo tiempo
+    # el límite real pasa a ser la CPU del contenedor.
+    THREADPOOL_SIZE: int = 64
+
     model_config = SettingsConfigDict(
         env_file=os.path.join(BASE_DIR, ".env"),
         env_file_encoding="utf-8",
