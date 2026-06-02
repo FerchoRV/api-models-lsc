@@ -17,11 +17,16 @@ class GeminiService:
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
         self.model_name = "gemini-2.5-flash"  # Modelo ideal: ultra rápido y económico
 
-    def get_narrative_sense(self, words_list: list[str]) -> str:
+    async def get_narrative_sense(self, words_list: list[str]) -> str:
         """
         [Flujo Sign-to-Text]
         Toma la lista cruda de señas predichas por tus modelos de Keras
         y le da coherencia y sentido narrativo en español.
+
+        Es ``async`` para que el endpoint no bloquee el event loop de
+        FastAPI mientras Gemini responde (típicamente 200-1500 ms). Esto
+        permite atender más requests concurrentes con el mismo número
+        de threads.
         """
         raw_words = ", ".join(words_list)
         
@@ -31,6 +36,7 @@ class GeminiService:
                 "Actúas como un intérprete experto en Lengua de Señas. Tu tarea es recibir una lista "
                 "de palabras clave capturadas secuencialmente desde un video y estructurarlas en una "
                 "oración o párrafo en español que sea gramaticalmente correcto, natural y fluido. "
+                "ten en cuenta que puedes recibir palabras deletreadas con poco sentido, por lo que debes corregirlas para que tenga sentido."
                 "Conserva la intención original del mensaje. Devuelve ÚNICAMENTE la frase corregida, "
                 "sin ningún tipo de introducción, saludo, explicación o notas adicionales."
             ),
@@ -39,19 +45,21 @@ class GeminiService:
         
         prompt = f"Palabras clave detectadas: {raw_words}"
         
-        response = self.client.models.generate_content(
+        response = await self.client.aio.models.generate_content(
             model=self.model_name,
             contents=prompt,
-            config=config
+            config=config,
         )
         
         return response.text.strip()
 
-    def select_signs_from_text(self, text: str, available_signs: list[str]) -> list[str]:
+    async def select_signs_from_text(self, text: str, available_signs: list[str]) -> list[str]:
         """
         [Flujo Text-to-Sign]
         Recibe un texto común (máx 100 caracteres) y selecciona las señas correctas
         restringiéndose estrictamente al catálogo de tus 566 señas disponibles.
+
+        Es ``async`` por las mismas razones que ``get_narrative_sense``.
         """
         
         # Configuración del "Gem" para Text-to-Sign empleando Structured Outputs
@@ -79,10 +87,10 @@ class GeminiService:
             #f"Catálogo de señas permitidas (Elige solo de aquí):\n{available_signs}"
         )
         
-        response = self.client.models.generate_content(
+        response = await self.client.aio.models.generate_content(
             model=self.model_name,
             contents=prompt,
-            config=config
+            config=config,
         )
         
         # Como forzamos el formato JSON, response.text será un string JSON válido como:

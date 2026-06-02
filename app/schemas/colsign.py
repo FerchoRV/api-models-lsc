@@ -199,3 +199,94 @@ class HierarchicalBatchResponse(BaseModel):
 class SinglePredictionResponse(PredictionResult):
     """Respuesta de los endpoints individuales en `testing_models.py`."""
     pass
+
+
+# =====================================================================
+# Narrativa (Gemini sobre la lista de señas predichas)
+# =====================================================================
+
+class NarrativeSenseRequest(BaseModel):
+    """Request del endpoint `/narrative-sense`.
+
+    Recibe una lista de señas crudas (etiquetas) detectadas en orden
+    secuencial y Gemini las convierte en una oración natural en español.
+    """
+
+    words: List[str] = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Lista ordenada de señas predichas. "
+            "Ej: ['Hola', 'd', 'i', 'e', 'g', 'o']."
+        ),
+    )
+
+
+# Default sugerido para el filtro de confianza antes de pasar etiquetas a
+# Gemini. Estricto: solo predicciones muy seguras llegan al LLM. El cliente
+# puede sobrescribirlo por request (ej. 0.0 para deshabilitar el filtro).
+DEFAULT_MIN_CONFIDENCE = 0.7
+
+
+class NarrativeBatchPredictionRequest(BatchPredictionRequest):
+    """Request para los endpoints `/sign-to-narrative/*`.
+
+    Extiende `BatchPredictionRequest` agregando un filtro de confianza
+    que se aplica ANTES de enviar las etiquetas a Gemini: las predicciones
+    con `prob` menor a `min_confidence` se descartan. Esto:
+
+    - Evita contaminar la narrativa con clips de baja confianza (típicamente
+      frames de transición donde el modelo "adivina").
+    - Ahorra cuota de Gemini cuando muchos clips son ruido.
+    - No afecta a `predictions` en la respuesta (siguen llegando todas);
+      solo filtra el INPUT al LLM.
+
+    El default (`0.7`) es estricto; baja a `0.5` o `0.3` si necesitas
+    capturar señas con mala iluminación/encuadre. Pasa `0.0` para
+    deshabilitar el filtro por completo.
+    """
+
+    min_confidence: float = Field(
+        default=DEFAULT_MIN_CONFIDENCE,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Probabilidad mínima top-1 para que una predicción se envíe "
+            "a Gemini. Default 0.7 (estricto). 0.0 deshabilita el filtro."
+        ),
+    )
+
+
+class NarrativeSenseResponse(BaseModel):
+    """Respuesta del endpoint `/narrative-sense`."""
+
+    words: List[str] = Field(..., description="Lista original de señas recibida.")
+    narrative: str = Field(..., description="Oración o párrafo en español natural.")
+
+
+class FlatNarrativeResponse(FlatBatchResponse):
+    """Respuesta del endpoint combinado `/sign-to-narrative/flat`.
+
+    Igual que `FlatBatchResponse` pero añade el resultado de pasar las
+    etiquetas predichas por Gemini para obtener una narrativa fluida.
+    """
+
+    narrative: Optional[str] = Field(
+        default=None,
+        description=(
+            "Oración natural generada por Gemini a partir de las "
+            "etiquetas predichas. `null` si no hubo predicciones válidas."
+        ),
+    )
+
+
+class HierarchicalNarrativeResponse(HierarchicalBatchResponse):
+    """Respuesta del endpoint combinado `/sign-to-narrative/hierarchical`."""
+
+    narrative: Optional[str] = Field(
+        default=None,
+        description=(
+            "Oración natural generada por Gemini a partir de las "
+            "etiquetas predichas. `null` si no hubo predicciones válidas."
+        ),
+    )
