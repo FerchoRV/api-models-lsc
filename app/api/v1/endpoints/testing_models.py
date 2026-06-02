@@ -36,6 +36,7 @@ from app.services import (
     pipeline_colsign_model_static_v2 as static_pipeline,
     pipeline_colsign_model_unimanual_v2 as unimanual_pipeline,
 )
+from app.services.video_processor import VideoTooLongError
 
 
 router = APIRouter()
@@ -65,6 +66,16 @@ def _run_single(predict_one: Callable, payload: SinglePredictionRequest) -> dict
         return predict_one(**kwargs)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except VideoTooLongError as exc:
+        # 413 Payload Too Large: el cliente debe acortar el video.
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "message": str(exc),
+                "actual_seconds": round(exc.actual_seconds, 2),
+                "max_seconds": exc.max_seconds,
+            },
+        ) from exc
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except IOError as exc:
