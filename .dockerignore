@@ -43,7 +43,10 @@ notebooks/
 # Logs y outputs
 *.log
 logs/
-*.txt
+
+# Importante: NO ignorar *.txt globalmente porque `requirements.txt`
+# debe entrar al build context y `app/info_models/*_train_log.txt`
+# puede viajar como metadata de referencia.
 # Docker mismos archivos (no aportan dentro de la imagen)
 Dockerfile
 .dockerignore
