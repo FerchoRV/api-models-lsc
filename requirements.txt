@@ -4,7 +4,7 @@ tensorflow==2.17.0
 mediapipe==0.10.14
 opencv-python==4.10.0.84
 fastapi==0.111.1
-pydantic==2.7.4
+pydantic==2.13.4
 pydantic-settings==2.3.4
 uvicorn==0.30.1
 google-genai==2.6.0
