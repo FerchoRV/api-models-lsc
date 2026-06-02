@@ -1,0 +1,57 @@
+# Entornos virtuales locales
+venv/
+.venv/
+_env/
+env/
+
+# Cache de Python
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Git y metadatos
+.git/
+.gitignore
+.gitattributes
+
+# Variables sensibles: NUNCA dentro de la imagen.
+# GEMINI_API_KEY llega vía Secret Manager / variables de Cloud Run.
+.env
+.env.*
+*.env
+
+# Documentación y assets de desarrollo
+README.md
+*.md
+docs/
+LICENSE
+
+# Configuración local de IDEs
+.vscode/
+.idea/
+.cursor/
+
+# Tests y datasets de pruebas locales
+tests/
+test_data/
+notebooks/
+*.ipynb
+.ipynb_checkpoints/
+
+# Logs y outputs
+*.log
+logs/
+*.txt
+# Docker mismos archivos (no aportan dentro de la imagen)
+Dockerfile
+.dockerignore
+
+# Cloud Build / CI
+cloudbuild.yaml
+.github/
+
+# Sistema
+.DS_Store
+Thumbs.db
