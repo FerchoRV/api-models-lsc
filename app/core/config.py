@@ -22,6 +22,28 @@ class Settings(BaseSettings):
     NAME_SIGN_PATH: str = os.path.join(BASE_DIR, "app", "information_json", "name_sign_list.json")
     GEMINI_API_KEY: str
 
+    # ---- Modelos ColSign LSTM (jerárquico v2 + plano) ----
+    # Directorios donde viven los checkpoints `.keras` y los `*_labels.json`.
+    # `utils_pipeplanes.load_model()` resuelve automáticamente el `_best.keras`
+    # a partir del nombre canónico (sin sufijo).
+    MODELS_DIR: str = os.path.join(BASE_DIR, "app", "models")
+    INFO_MODELS_DIR: str = os.path.join(BASE_DIR, "app", "info_models")
+
+    # Nombre canónico del modelo raíz: clasifica el grupo morfológico (4 clases).
+    COLSIGN_ROOT_MODEL: str = "colsign_lstm_norm_raiz_45_154_v2"
+
+    # Sub-modelos por grupo predicho por el modelo raíz. Las claves DEBEN
+    # coincidir exactamente con las etiquetas que produce el raíz.
+    COLSIGN_SUB_MODELS: dict[str, str] = {
+        "Grupo Estático":                     "colsign_lstm_norm_estatic_45_154_v2",
+        "Grupo Dinámico Unimanual":           "colsign_lstm_norm_unimanual_45_154_v2",
+        "Grupo Dinámico Bimanual Simétrico":  "colsign_lstm_norm_bi_simetrico_45_154",
+        "Grupo Dinámico Bimanual Asimétrico": "colsign_lstm_norm_bi_asimetrico_45_154",
+    }
+
+    # Modelo plano: 154 clases en una sola red (fallback / comparación).
+    COLSIGN_FLAT_MODEL: str = "colsign_lstm_norm_45_154"
+
     model_config = SettingsConfigDict(
         env_file=os.path.join(BASE_DIR, ".env"),
         env_file_encoding="utf-8",
