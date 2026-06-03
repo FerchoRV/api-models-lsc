@@ -22,6 +22,11 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.services.video_processor import (
+    DEFAULT_CLIP_SECONDS,
+    DEFAULT_MAX_VIDEO_SECONDS,
+)
+
 
 # Las constantes deben coincidir con `inference_helpers.EXPECTED_*`.
 # Las repetimos aquí para no acoplar el schema con TensorFlow.
@@ -107,6 +112,18 @@ class BatchPredictionRequest(BaseModel):
     sequences: Optional[List[SequenceInput]] = Field(
         default=None,
         description="Lista de secuencias (45, 225) ya pre-procesadas.",
+    )
+    clip_seconds: float = Field(
+        default=DEFAULT_CLIP_SECONDS,
+        ge=0.5,
+        le=DEFAULT_MAX_VIDEO_SECONDS,
+        description=(
+            "Duración en segundos de cada clip al dividir videos largos "
+            f"(>3 s). Default {DEFAULT_CLIP_SECONDS}. Máximo "
+            f"{DEFAULT_MAX_VIDEO_SECONDS:.0f} (tope del video). Solo aplica "
+            "cuando la entrada es `video_url` o `video_urls`; se ignora "
+            "con `sequences`."
+        ),
     )
 
     @model_validator(mode="after")

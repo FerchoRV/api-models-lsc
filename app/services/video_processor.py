@@ -10,7 +10,7 @@ Responsabilidades:
    FPS efectivo. La regla es:
      - Video ≤ ``short_threshold_s`` (3 s por defecto)  → 1 solo clip.
      - Video >  ``short_threshold_s``                   → clips
-       consecutivos no superpuestos de ``clip_seconds`` (2 s por default).
+       consecutivos no superpuestos de ``clip_seconds`` (1.5 s por default).
        El residuo final se conserva SOLO si tiene al menos
        ``min_frames`` frames (por defecto ``sequence_length`` = 45).
        Esto evita predecir sobre un clip residual demasiado corto, donde
@@ -39,7 +39,7 @@ from app.services.src.utils_pipeplanes import (
 
 # Parámetros por defecto alineados con la arquitectura LSTM v2.
 DEFAULT_SEQUENCE_LENGTH      = 45
-DEFAULT_CLIP_SECONDS         = 2.0   # cada chunk dura ~2 s de video real
+DEFAULT_CLIP_SECONDS         = 1.5   # duración de cada clip (override vía API)
 DEFAULT_SHORT_THRESHOLD_S    = 3.0   # ≤3 s → 1 sola secuencia
 DEFAULT_FPS_FALLBACK         = 30.0  # si OpenCV no reporta FPS
 
@@ -48,6 +48,8 @@ DEFAULT_FPS_FALLBACK         = 30.0  # si OpenCV no reporta FPS
 # los frames. El caller puede sobrescribirlo pasando `max_seconds`,
 # o `0`/`None` para desactivar el límite.
 DEFAULT_MAX_VIDEO_SECONDS    = 60.0
+# Mismo tope que la duración máxima del video (validación en schemas).
+MAX_CLIP_SECONDS             = DEFAULT_MAX_VIDEO_SECONDS
 
 
 class VideoTooLongError(ValueError):
@@ -341,6 +343,7 @@ __all__ = [
     "DEFAULT_CLIP_SECONDS",
     "DEFAULT_SHORT_THRESHOLD_S",
     "DEFAULT_MAX_VIDEO_SECONDS",
+    "MAX_CLIP_SECONDS",
     "VideoTooLongError",
     "read_all_frames_with_fps",
     "split_frames_into_clips",

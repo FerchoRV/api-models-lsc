@@ -88,7 +88,8 @@ async def text_to_sign(payload: TextToSignRequest, request: Request):
 async def sign_to_text_flat(payload: BatchPredictionRequest):
     """Predice una o varias señas usando el modelo plano `colsign_lstm_norm_45_154`.
 
-    - `video_url` único: 1 predicción si dura ≤ 3 s, N si dura más (clips de 2 s).
+    - `video_url` único: 1 predicción si dura ≤ 3 s, N si dura más (clips de
+      `clip_seconds`, default 1.5 s, máx. 60).
     - `video_urls`: cada URL aporta sus propias predicciones, concatenadas.
     - `sequences`: 1 predicción por cada secuencia (45, 225) enviada.
     """
@@ -258,11 +259,21 @@ def _batch_payload_to_kwargs(payload: BatchPredictionRequest) -> dict:
     Las `sequences` (lista de `SequenceInput`) se transforman a una
     lista de ndarrays float32 (45, 225), que es lo que consume
     `predict_sequence` internamente.
+
+    ``clip_seconds`` se propaga a los pipelines cuando el input es video;
+    si la entrada son secuencias, el pipeline lo ignora (sin efecto).
     """
+    clip_seconds = payload.clip_seconds
     if payload.video_url is not None:
-        return {"video_url": payload.video_url}
+        return {
+            "video_url": payload.video_url,
+            "clip_seconds": clip_seconds,
+        }
     if payload.video_urls is not None:
-        return {"video_urls": payload.video_urls}
+        return {
+            "video_urls": payload.video_urls,
+            "clip_seconds": clip_seconds,
+        }
     if payload.sequences is not None:
         return {"sequences": _sequences_to_ndarrays(payload.sequences)}
     # Imposible llegar aquí por el @model_validator del schema.

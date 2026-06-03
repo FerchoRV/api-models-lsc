@@ -219,6 +219,7 @@ Los combinados aceptan además `min_confidence` (default `0.7`). Las prediccione
 ```json
 {
   "video_url": "https://cdn.colsign.com.co/clips/hola-diego.mp4",
+  "clip_seconds": 1.5,
   "min_confidence": 0.6
 }
 ```
