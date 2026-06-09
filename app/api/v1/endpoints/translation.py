@@ -44,11 +44,15 @@ from app.schemas.colsign import (
     NarrativeSenseRequest,
     NarrativeSenseResponse,
     SequenceInput,
+    SlidingWindowNarrativeRequest,
+    WindowNarrativeResponse,
 )
 from app.schemas.translation import TextToSignRequest, TextToSignResponse
 from app.services import pipeline_colsign_45_154 as flat_pipeline
 from app.services import pipeline_colsign_jerarquico_v2 as hierarchical_pipeline
+from app.services import video_windows_processor as windows
 from app.services.gemini_service import GeminiService
+from app.services.video_processor import VideoTooLongError
 
 
 router = APIRouter()
@@ -184,8 +188,92 @@ async def sign_to_narrative_hierarchical(payload: NarrativeBatchPredictionReques
 
 
 # =====================================================================
+# Señas → Narrativa con VENTANA DESLIZANTE (video continuo)
+# =====================================================================
+
+@router.post("/sign-to-narrative/flat/sliding-window", response_model=WindowNarrativeResponse)
+async def sign_to_narrative_flat_window(payload: SlidingWindowNarrativeRequest):
+    """Igual que `/sign-to-narrative/flat` pero con ventana de tiempo deslizante.
+
+    Pensado para VIDEO CONTINUO (varias señas en una grabación). Recorre el
+    video con una ventana de `window_seconds` avanzando `stride_seconds`,
+    descarta ventanas con confianza < `min_confidence`, penaliza las
+    detecciones repetidas (fusiona la misma seña dentro de
+    `repeat_gap_seconds` quedándose con la de mayor confianza) e ignora los
+    últimos `discard_tail_seconds`. Usa el modelo PLANO de 154 clases.
+    """
+    predictions = await _run_window_pipeline_in_threadpool(windows.predict_flat, payload)
+    narrative = await _build_narrative(predictions, payload.min_confidence)
+    return WindowNarrativeResponse(
+        count=len(predictions),
+        predictions=predictions,
+        narrative=narrative,
+    )
+
+
+@router.post(
+    "/sign-to-narrative/hierarchical/sliding-window",
+    response_model=WindowNarrativeResponse,
+)
+async def sign_to_narrative_hierarchical_window(payload: SlidingWindowNarrativeRequest):
+    """Igual que el anterior pero con el pipeline JERÁRQUICO (raíz + sub-modelo)."""
+    predictions = await _run_window_pipeline_in_threadpool(
+        windows.predict_hierarchical, payload,
+    )
+    narrative = await _build_narrative(predictions, payload.min_confidence)
+    return WindowNarrativeResponse(
+        count=len(predictions),
+        predictions=predictions,
+        narrative=narrative,
+    )
+
+
+# =====================================================================
 # Helpers
 # =====================================================================
+
+async def _run_window_pipeline_in_threadpool(
+    window_predict_fn,
+    payload: SlidingWindowNarrativeRequest,
+) -> List[dict]:
+    """Ejecuta un `predict_flat/predict_hierarchical` de ventana deslizante
+    en el threadpool y traduce excepciones a HTTPException.
+    """
+    kwargs = {
+        "window_seconds":       payload.window_seconds,
+        "stride_seconds":       payload.stride_seconds,
+        "min_confidence":       payload.min_confidence,
+        "repeat_gap_seconds":   payload.repeat_gap_seconds,
+        "discard_tail_seconds": payload.discard_tail_seconds,
+        "min_segment_frames":   payload.min_segment_frames,
+    }
+    if payload.video_url is not None:
+        kwargs["video_url"] = payload.video_url
+    else:
+        kwargs["video_urls"] = payload.video_urls
+
+    try:
+        return await run_in_threadpool(window_predict_fn, **kwargs)
+    except VideoTooLongError as exc:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "message": str(exc),
+                "actual_seconds": round(exc.actual_seconds, 2),
+                "max_seconds": exc.max_seconds,
+            },
+        ) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IOError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - barrera de seguridad
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error inesperado: {type(exc).__name__}: {exc}",
+        ) from exc
 
 async def _run_pipeline_in_threadpool(
     pipeline_predict_fn,

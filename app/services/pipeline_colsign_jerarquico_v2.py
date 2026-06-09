@@ -141,6 +141,25 @@ def predict(
 
 
 # =====================================================================
+# API pública para reuso desde otros procesadores (p.ej. ventana deslizante)
+# =====================================================================
+
+def predict_sequence_hierarchical(
+    sequence: np.ndarray,
+    holistic = None,
+    include_proba: bool = False,
+) -> dict:
+    """Aplica el flujo jerárquico (raíz + sub-modelo) a UNA secuencia
+    ``(45, 225)`` ya pre-procesada y devuelve un dict de predicción.
+
+    Es el envoltorio público de `_route_sequence`, pensado para que otros
+    módulos (como `video_windows_processor`) reutilicen el ruteo jerárquico
+    sin depender de un símbolo privado.
+    """
+    return _route_sequence(sequence, holistic=holistic, include_proba=include_proba)
+
+
+# =====================================================================
 # Núcleo del flujo jerárquico (1 secuencia → 1 predicción final)
 # =====================================================================
 
@@ -289,4 +308,4 @@ def _predict_from_videos(
     return out
 
 
-__all__ = ["predict", "SUB_PIPELINES"]
+__all__ = ["predict", "predict_sequence_hierarchical", "SUB_PIPELINES"]

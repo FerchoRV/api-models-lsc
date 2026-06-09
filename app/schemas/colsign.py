@@ -307,3 +307,128 @@ class HierarchicalNarrativeResponse(HierarchicalBatchResponse):
             "etiquetas predichas. `null` si no hubo predicciones válidas."
         ),
     )
+
+
+# =====================================================================
+# Ventana deslizante (sliding window + penalización de repeticiones)
+# =====================================================================
+
+# Defaults espejo de `video_windows_processor` (se repiten aquí para no
+# acoplar el schema con el import pesado de TF/OpenCV).
+DEFAULT_WINDOW_SECONDS        = 2.0
+DEFAULT_STRIDE_SECONDS        = 1.0
+DEFAULT_WINDOW_MIN_CONFIDENCE = 0.50
+DEFAULT_REPEAT_GAP_SECONDS    = 3.0
+DEFAULT_DISCARD_TAIL_SECONDS  = 2.0
+DEFAULT_MIN_SEGMENT_FRAMES    = 10
+
+
+class SlidingWindowNarrativeRequest(BaseModel):
+    """Request para los endpoints narrativos con ventana deslizante.
+
+    A diferencia del modo batch, este modo está pensado para VIDEO CONTINUO
+    (varias señas seguidas en una sola grabación). Por eso solo acepta
+    video(s): la ventana deslizante necesita los frames crudos. No acepta
+    `sequences` (esas ya están pre-cortadas por el cliente).
+    """
+
+    video_url: Optional[str] = Field(
+        default=None,
+        description="URL pública de UN video continuo.",
+    )
+    video_urls: Optional[List[str]] = Field(
+        default=None,
+        description="Lista de URLs públicas de videos continuos.",
+    )
+
+    window_seconds: float = Field(
+        default=DEFAULT_WINDOW_SECONDS,
+        gt=0.0,
+        le=DEFAULT_MAX_VIDEO_SECONDS,
+        description="Ancho de la ventana de tiempo en segundos (default 2.0).",
+    )
+    stride_seconds: float = Field(
+        default=DEFAULT_STRIDE_SECONDS,
+        gt=0.0,
+        le=DEFAULT_MAX_VIDEO_SECONDS,
+        description=(
+            "Avance entre ventanas en segundos (default 1.0). Menor que "
+            "`window_seconds` produce solape (recomendado)."
+        ),
+    )
+    min_confidence: float = Field(
+        default=DEFAULT_WINDOW_MIN_CONFIDENCE,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Probabilidad mínima top-1 para conservar la predicción de una "
+            "ventana. Default 0.50. También se usa como filtro previo a Gemini."
+        ),
+    )
+    repeat_gap_seconds: float = Field(
+        default=DEFAULT_REPEAT_GAP_SECONDS,
+        ge=0.0,
+        le=DEFAULT_MAX_VIDEO_SECONDS,
+        description=(
+            "Hueco máximo (s) para considerar dos detecciones de la misma "
+            "etiqueta como la misma seña. Más allá, cuenta como repetición "
+            "intencional. Default 3.0."
+        ),
+    )
+    discard_tail_seconds: float = Field(
+        default=DEFAULT_DISCARD_TAIL_SECONDS,
+        ge=0.0,
+        le=DEFAULT_MAX_VIDEO_SECONDS,
+        description="Segundos finales del video que se ignoran (default 2.0).",
+    )
+    min_segment_frames: int = Field(
+        default=DEFAULT_MIN_SEGMENT_FRAMES,
+        ge=1,
+        description="Tamaño mínimo (frames) de una ventana para evaluarla. Default 10.",
+    )
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self) -> "SlidingWindowNarrativeRequest":
+        provided = sum(x is not None for x in (self.video_url, self.video_urls))
+        if provided != 1:
+            raise ValueError(
+                "Debes enviar EXACTAMENTE uno de: `video_url` o `video_urls`."
+            )
+        return self
+
+
+class WindowPredictionResult(HierarchicalPredictionResult):
+    """Evento detectado por la ventana deslizante.
+
+    Extiende `HierarchicalPredictionResult` (que ya cubre los campos del
+    modelo plano y, opcionalmente, los del jerárquico `grupo_raiz*`) con
+    marcas temporales y el conteo de repeticiones fusionadas.
+    """
+
+    t_start: Optional[float] = Field(
+        default=None, description="Segundo de inicio (onset) del evento."
+    )
+    t_end: Optional[float] = Field(
+        default=None, description="Segundo de fin (offset) del evento."
+    )
+    t_peak: Optional[float] = Field(
+        default=None, description="Segundo de la ventana de mayor confianza."
+    )
+    repeat_count: Optional[int] = Field(
+        default=None,
+        description="Cuántas ventanas solapadas se fusionaron en este evento.",
+    )
+
+
+class WindowNarrativeResponse(BaseModel):
+    """Respuesta de los endpoints narrativos con ventana deslizante."""
+
+    count: int = Field(..., description="Cantidad de eventos (señas) detectados.")
+    predictions: List[WindowPredictionResult]
+    narrative: Optional[str] = Field(
+        default=None,
+        description=(
+            "Oración natural generada por Gemini a partir de las etiquetas "
+            "detectadas en orden temporal. `null` si no hubo señas válidas."
+        ),
+    )
